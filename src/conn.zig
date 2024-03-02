@@ -1432,7 +1432,6 @@ test "PG: isUnique" {
 	}
 }
 
-// Does not work, not sure why
 test "Conn: TLS" {
 	var bundle = Bundle{};
 	try bundle.addCertsFromFilePath(t.allocator, std.fs.cwd(), "tests/server.crt");

@@ -10,7 +10,6 @@ const Listener = @import("listener.zig").Listener;
 
 const Thread = std.Thread;
 const Allocator = std.mem.Allocator;
-const tls = std.crypto.tls;
 const Bundle = std.crypto.Certificate.Bundle;
 
 pub const Pool = struct {
@@ -37,6 +36,7 @@ pub const Pool = struct {
 
 		const size = opts.size;
 		const conns = try allocator.alloc(*Conn, size);
+		errdefer allocator.free(conns);
 
 		var owned_opts = opts;
 		var own_ca_bundle = false;
@@ -46,6 +46,9 @@ pub const Pool = struct {
 			own_ca_bundle = true;
 			owned_opts.connect.ca_bundle = bundle;
 		}
+		errdefer if (own_ca_bundle) {
+			owned_opts.connect.ca_bundle.?.deinit(allocator);
+		};
 
 		pool.* = .{
 			._cond = .{},
@@ -58,6 +61,8 @@ pub const Pool = struct {
 			._reconnector = Reconnector.init(pool),
 			._timeout = @as(u64, @intCast(opts.timeout)) * std.time.ns_per_ms,
 		};
+
+		errdefer pool._reconnector.stop();
 
 		var opened_connections: usize = 0;
 		errdefer {

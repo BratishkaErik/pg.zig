@@ -5,7 +5,7 @@ const Buffer = @import("buffer").Buffer;
 const proto = lib.proto;
 const Reader = lib.Reader;
 
-const Stream = std.net.Stream;
+const Stream = lib.Stream;
 const Allocator = std.mem.Allocator;
 
 pub const Opts = struct {
@@ -22,7 +22,7 @@ pub const Opts = struct {
 //   - is only valid until the next call to reader.read()
 //     (we expect our caller to clone the value)
 // a normal zig error on any other error
-pub fn auth(stream: Stream, buf: *Buffer, reader: *Reader, opts: Opts) !?[]const u8 {
+pub fn auth(stream: *Stream, buf: *Buffer, reader: *Reader, opts: Opts) !?[]const u8 {
 	try reader.startFlow(null, opts.timeout);
 
 	// ignore errors on endFlow, because it's troublesome to handle, and only
@@ -79,7 +79,7 @@ pub fn auth(stream: Stream, buf: *Buffer, reader: *Reader, opts: Opts) !?[]const
 	}
 }
 
-fn saslAuth(req: proto.AuthenticationRequest.SASL, stream: Stream, buf: *Buffer, reader: *Reader, opts: Opts) !?[]const u8 {
+fn saslAuth(req: proto.AuthenticationRequest.SASL, stream: *Stream, buf: *Buffer, reader: *Reader, opts: Opts) !?[]const u8 {
 	if (!req.scram_sha_256) {
 		return error.UnexpectedDBMessage;
 	}
@@ -134,7 +134,7 @@ fn saslAuth(req: proto.AuthenticationRequest.SASL, stream: Stream, buf: *Buffer,
 	return null;
 }
 
-fn md5PasswordAuth(salt: []const u8, stream: Stream, buf: *Buffer, opts: Opts) !void {
+fn md5PasswordAuth(salt: []const u8, stream: *Stream, buf: *Buffer, opts: Opts) !void {
 	var hash: [16]u8 = undefined;
 	{
 		var hasher = std.crypto.hash.Md5.init(.{});
@@ -156,7 +156,7 @@ fn md5PasswordAuth(salt: []const u8, stream: Stream, buf: *Buffer, opts: Opts) !
 	try passwordAuth(password, stream, buf);
 }
 
-fn passwordAuth(password: []const u8, stream: Stream, buf: *Buffer) !void {
+fn passwordAuth(password: []const u8, stream: *Stream, buf: *Buffer) !void {
 	buf.resetRetainingCapacity();
 	const pw = proto.PasswordMessage{.password = password};
 	try pw.write(buf);

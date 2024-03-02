@@ -5,10 +5,10 @@ const Buffer = @import("buffer").Buffer;
 
 const proto = lib.proto;
 const Conn = lib.Conn;
+const Stream = lib.Stream;
 const Reader = lib.Reader;
 const NotificationResponse = lib.proto.NotificationResponse;
 
-const Stream = std.net.Stream;
 const Allocator = std.mem.Allocator;
 
 const ListenError = union(enum) {
@@ -19,7 +19,7 @@ const ListenError = union(enum) {
 pub const Listener = struct {
 	err: ?ListenError = null,
 
-	_stream: Stream,
+	_stream: *Stream,
 
 	// A buffer used for writing to PG. This can grow dynamically as needed.
 	_buf: Buffer,
@@ -34,7 +34,7 @@ pub const Listener = struct {
 	_allocator: Allocator,
 
 	pub fn open(allocator: Allocator, opts: Conn.Opts) !Listener {
-		const stream = blk: {
+		const net_stream = blk: {
 			if (opts.unix_socket) |path| {
 				break :blk try std.net.connectUnixSocket(path);
 			} else {
@@ -43,7 +43,9 @@ pub const Listener = struct {
 				break :blk try std.net.tcpConnectToHost(allocator, host, port);
 			}
 		};
-		errdefer stream.close();
+		errdefer net_stream.close();
+		const stream = try allocator.create(Stream);
+		stream.* = Stream.init(net_stream, null);
 
 		const buf = try Buffer.init(allocator, opts.write_buffer orelse 2048);
 		errdefer buf.deinit();
@@ -60,8 +62,9 @@ pub const Listener = struct {
 	}
 
 	pub fn deinit(self: *Listener) void {
+		const allocator = self._allocator;
 		if (self._err_data) |err_data| {
-			self._allocator.free(err_data);
+			allocator.free(err_data);
 		}
 		self._buf.deinit();
 		self._reader.deinit();
@@ -69,6 +72,7 @@ pub const Listener = struct {
 		// try to send a Terminate to the DB
 		self._stream.writeAll(&.{'X', 0, 0, 0, 4}) catch {};
 		self._stream.close();
+		allocator.destroy(self._stream);
 	}
 
 	pub fn auth(self: *Listener, opts: lib.auth.Opts) !void {

@@ -95,6 +95,8 @@ Opens a connection, or returns an error. Prefer creating connections through the
 * `write_buffer` - Size of the write buffer, used when sending messages to the server. Will temporarily allocate more space as needed. If you're writing large SQL or have large parameters (e.g. long text values), making this larger might improve performance a little. Defaults to `2048`, cannot be less than `128`.
 * `read_buffer` - Size of the read buffer, used when reading data from the server. Will temporarily allocate more space as needed. Given most apps are going to be reading rows of data, this can have large impact on performance. Defaults to `4096`.
 * `result_state_size` - Each `Result` (retrieved via a call to `query`) carries metadata about the data (e.g. the type of each column). For results with less than or equal to `result_state_size` columns, a static `state` container is used. Queries with more columns require a dynamic allocation. Defaults to `32`. 
+* `tls` - Defaults to `false`. USE WITH CARE. This uses `std.tls.Client` which has a [number of serious issues](https://github.com/ziglang/zig/issues/15226). I do not recommend you enable this.
+* `ca_bundle` - Defaults to `null`. If `null` when `.tls = true`, a default bundle based on the OS certs will be used. When used through the pool, when `ca_bundle` is `null` a single default bundle is used for all subsequent connections. If you're opening many connections directly (not through the pool), consider supplying this value as creating/scaning the default bundle for each connection adds a lot of overhead.
 
 ### deinit(conn: \*Conn) void
 Closes the connection and releases its resources. This method should not be used when the connection comes from the pool.

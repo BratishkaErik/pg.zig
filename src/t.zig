@@ -193,7 +193,14 @@ pub const Stream = struct {
 };
 
 pub fn connect(opts: anytype) Conn {
-	var c = Conn.open(allocator, .{.host = "localhost"}) catch unreachable;
+	const T = @TypeOf(opts);
+
+	var c = Conn.open(allocator, .{
+		.host = "localhost",
+		.tls = if (@hasField(T, "tls")) opts.tls else false,
+		.ca_bundle = if (@hasField(T, "ca_bundle")) opts.ca_bundle else null,
+	}) catch unreachable;
+
 	c.auth(authOpts(opts)) catch |err| {
 		if (c.err) |pg| {
 			@panic(pg.message);

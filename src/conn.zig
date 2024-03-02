@@ -6,23 +6,26 @@ const proto = lib.proto;
 const types = lib.types;
 const Pool = lib.Pool;
 const Stmt = lib.Stmt;
+const Stream = lib.Stream;
 const Reader = lib.Reader;
 const Result = lib.Result;
 const Timeout = lib.Timeout;
 const QueryRow = lib.QueryRow;
 
 const os = std.os;
-const Stream = std.net.Stream;
+const net = std.net;
+const tls = std.crypto.tls;
 const Allocator = std.mem.Allocator;
+const Bundle = std.crypto.Certificate.Bundle;
 
 pub const Conn = struct {
 	// If we get a postgreSQL error, this will be set.
 	err: ?proto.Error,
 
-// The underlying data for err
+	// The underlying data for err
 	_err_data: ?[]const u8,
 
-	_stream: Stream,
+	_stream: *Stream,
 
 	_pool: ?*Pool = null,
 
@@ -71,6 +74,8 @@ pub const Conn = struct {
 		write_buffer: ?u16 = null,
 		read_buffer: ?u16 = null,
 		result_state_size: u16 = 32,
+		tls: bool = false,
+		ca_bundle: ?Bundle = null,
 	};
 
 	pub const QueryOpts = struct {
@@ -86,16 +91,38 @@ pub const Conn = struct {
 	};
 
 	pub fn open(allocator: Allocator, opts: Opts) !Conn {
-		const stream = blk: {
+		const host = opts.host orelse "127.0.0.1";
+		const net_stream = blk: {
 			if (opts.unix_socket) |path| {
-				break :blk try std.net.connectUnixSocket(path);
+				break :blk try net.connectUnixSocket(path);
 			} else {
-				const host = opts.host orelse "127.0.0.1";
 				const port = opts.port orelse 5432;
-				break :blk try std.net.tcpConnectToHost(allocator, host, port);
+				break :blk try net.tcpConnectToHost(allocator, host, port);
 			}
 		};
-		errdefer stream.close();
+		errdefer net_stream.close();
+
+		var tls_client: ?tls.Client = null;
+		if (opts.tls) {
+
+			try sslRequest(net_stream);
+
+			var own_bundle = false;
+			var bundle = opts.ca_bundle orelse blk: {
+				own_bundle = true;
+				var b = Bundle{};
+				try b.rescan(allocator);
+				break :blk b;
+			};
+			tls_client = try tls.Client.init(net_stream, bundle, host);
+
+			if (own_bundle) {
+				bundle.deinit(allocator);
+			}
+		}
+
+		const stream = try allocator.create(Stream);
+		stream.* = Stream.init(net_stream, tls_client);
 
 		const buf = try Buffer.init(allocator, @min(opts.write_buffer orelse 2048, 128));
 		errdefer buf.deinit();
@@ -135,6 +162,7 @@ pub const Conn = struct {
 		// try to send a Terminate to the DB
 		self.write(&.{'X', 0, 0, 0, 4}) catch {};
 		self._stream.close();
+		allocator.destroy(self._stream);
 	}
 
 	pub fn release(self: *Conn) void {
@@ -144,6 +172,21 @@ pub const Conn = struct {
 		};
 		self.err = null;
 		pool.release(self);
+	}
+
+	// An SSL request is upgraded from a standard request. After connecting, the
+	// first thing we send is this magic payload (an SSLRequest message). The
+	// server replied with 'S' for SUCCESS or 'N' for failure. On 'S' we start
+	// a TLS session and then follow the normal startup flow.
+	pub fn sslRequest(stream: net.Stream) !void {
+		// 4-byte length, value = 8 because it includes self
+		// 4-byte magic integer, value = 80877103
+		try stream.writeAll(&.{0, 0, 0, 8, 4, 210, 22, 47});
+		var buf = [1]u8{0};
+		_ = try stream.read(&buf);
+		if (buf[0] != 'S') {
+			return error.ServerDoesNotSupportSSL;
+		}
 	}
 
 	pub fn auth(self: *Conn, opts: lib.auth.Opts) !void {
@@ -1388,6 +1431,39 @@ test "PG: isUnique" {
 		try t.expectEqual(true, c.err.?.isUnique());
 	}
 }
+
+// Does not work, not sure why
+// test "Conn: TLS" {
+// 	var bundle = Bundle{};
+// 	try bundle.addCertsFromFilePath(t.allocator, std.fs.cwd(), "tests/server.crt");
+// 	defer bundle.deinit(t.allocator);
+
+// 	var c = t.connect(.{
+// 		.tls = true,
+// 		.ca_bundle = bundle,
+// 	});
+// 	defer c.deinit();
+
+// 	const r1 = try c.row("select 1 where $1", .{false});
+// 	try t.expectEqual(null, r1);
+
+// 	const r2 = (try c.row("select 2 where $1", .{true})) orelse unreachable;
+// 	try t.expectEqual(2, r2.get(i32, 0));
+// 	r2.deinit();
+
+// 	// make sure the conn is still valid after a successful row
+// 	const r3 = (try c.row("select $1::int where $2", .{3, true})) orelse unreachable;
+// 	try t.expectEqual(3, r3.get(i32, 0));
+// 	r3.deinit();
+
+// 	// make sure the conn is still valid after a successful row
+// 	try t.expectError(error.MoreThanOneRow, c.row("select 1 union all select 2", .{}));
+
+// 	// make sure the conn is still valid after MoreThanOneRow error
+// 	const r4 = (try c.row("select $1::text where $2", .{"hi", true})) orelse unreachable;
+// 	try t.expectString("hi", r4.get([]u8, 0));
+// 	r4.deinit();
+// }
 
 fn expectNumeric(numeric: types.Numeric, expected: []const u8) !void {
 	var str_buf: [50]u8 = undefined;

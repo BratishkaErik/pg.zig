@@ -10,6 +10,8 @@ const Listener = @import("listener.zig").Listener;
 
 const Thread = std.Thread;
 const Allocator = std.mem.Allocator;
+const tls = std.crypto.tls;
+const Bundle = std.crypto.Certificate.Bundle;
 
 pub const Pool = struct {
 	_opts: Opts,
@@ -20,6 +22,7 @@ pub const Pool = struct {
 	_mutex: Thread.Mutex,
 	_cond: Thread.Condition,
 	_reconnector: Reconnector,
+	_own_ca_bundle: bool,
 
 	pub const Opts = struct {
 		size: u16 = 10,
@@ -35,13 +38,23 @@ pub const Pool = struct {
 		const size = opts.size;
 		const conns = try allocator.alloc(*Conn, size);
 
+		var owned_opts = opts;
+		var own_ca_bundle = false;
+		if (opts.connect.tls and opts.connect.ca_bundle == null) {
+			var bundle = Bundle{};
+			try bundle.rescan(allocator);
+			own_ca_bundle = true;
+			owned_opts.connect.ca_bundle = bundle;
+		}
+
 		pool.* = .{
 			._cond = .{},
 			._mutex = .{},
-			._opts = opts,
 			._conns = conns,
 			._available = size,
+			._opts = owned_opts,
 			._allocator = allocator,
+			._own_ca_bundle = own_ca_bundle,
 			._reconnector = Reconnector.init(pool),
 			._timeout = @as(u64, @intCast(opts.timeout)) * std.time.ns_per_ms,
 		};
@@ -72,6 +85,9 @@ pub const Pool = struct {
 			allocator.destroy(conn);
 		}
 		allocator.free(self._conns);
+		if (self._own_ca_bundle) {
+			self._opts.connect.ca_bundle.?.deinit(allocator);
+		}
 		allocator.destroy(self);
 	}
 

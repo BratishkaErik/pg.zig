@@ -1433,37 +1433,37 @@ test "PG: isUnique" {
 }
 
 // Does not work, not sure why
-// test "Conn: TLS" {
-// 	var bundle = Bundle{};
-// 	try bundle.addCertsFromFilePath(t.allocator, std.fs.cwd(), "tests/server.crt");
-// 	defer bundle.deinit(t.allocator);
+test "Conn: TLS" {
+	var bundle = Bundle{};
+	try bundle.addCertsFromFilePath(t.allocator, std.fs.cwd(), "tests/server.crt");
+	defer bundle.deinit(t.allocator);
 
-// 	var c = t.connect(.{
-// 		.tls = true,
-// 		.ca_bundle = bundle,
-// 	});
-// 	defer c.deinit();
+	var c = t.connect(.{
+		.tls = true,
+		.ca_bundle = bundle,
+	});
+	defer c.deinit();
 
-// 	const r1 = try c.row("select 1 where $1", .{false});
-// 	try t.expectEqual(null, r1);
+	const r1 = try c.row("select 1 where $1", .{false});
+	try t.expectEqual(null, r1);
 
-// 	const r2 = (try c.row("select 2 where $1", .{true})) orelse unreachable;
-// 	try t.expectEqual(2, r2.get(i32, 0));
-// 	r2.deinit();
+	const r2 = (try c.row("select 2 where $1", .{true})) orelse unreachable;
+	try t.expectEqual(2, r2.get(i32, 0));
+	r2.deinit();
 
-// 	// make sure the conn is still valid after a successful row
-// 	const r3 = (try c.row("select $1::int where $2", .{3, true})) orelse unreachable;
-// 	try t.expectEqual(3, r3.get(i32, 0));
-// 	r3.deinit();
+	// make sure the conn is still valid after a successful row
+	const r3 = (try c.row("select $1::int where $2", .{3, true})) orelse unreachable;
+	try t.expectEqual(3, r3.get(i32, 0));
+	r3.deinit();
 
-// 	// make sure the conn is still valid after a successful row
-// 	try t.expectError(error.MoreThanOneRow, c.row("select 1 union all select 2", .{}));
+	// make sure the conn is still valid after a successful row
+	try t.expectError(error.MoreThanOneRow, c.row("select 1 union all select 2", .{}));
 
-// 	// make sure the conn is still valid after MoreThanOneRow error
-// 	const r4 = (try c.row("select $1::text where $2", .{"hi", true})) orelse unreachable;
-// 	try t.expectString("hi", r4.get([]u8, 0));
-// 	r4.deinit();
-// }
+	// make sure the conn is still valid after MoreThanOneRow error
+	const r4 = (try c.row("select $1::text where $2", .{"hi", true})) orelse unreachable;
+	try t.expectString("hi", r4.get([]u8, 0));
+	r4.deinit();
+}
 
 fn expectNumeric(numeric: types.Numeric, expected: []const u8) !void {
 	var str_buf: [50]u8 = undefined;

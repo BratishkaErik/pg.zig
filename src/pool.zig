@@ -344,36 +344,81 @@ test "Pool: exec" {
 }
 
 test "Pool: Query/Row" {
-		var pool = try Pool.init(t.allocator, .{.size = 1, .auth = t.authOpts(.{})});
-		defer pool.deinit();
+	var pool = try Pool.init(t.allocator, .{.size = 1, .auth = t.authOpts(.{})});
+	defer pool.deinit();
 
-		{
-			_ = try pool.exec("insert into all_types (id, col_int8, col_text) values ($1, $2, $3)", .{100, 1, "val-1"});
-			_ = try pool.exec("insert into all_types (id, col_int8, col_text) values ($1, $2, $3)", .{101, 2, "val-2"});
-		}
+	{
+		_ = try pool.exec("insert into all_types (id, col_int8, col_text) values ($1, $2, $3)", .{100, 1, "val-1"});
+		_ = try pool.exec("insert into all_types (id, col_int8, col_text) values ($1, $2, $3)", .{101, 2, "val-2"});
+	}
 
-		for (0..3)  |_| {
-			var result = try pool.query("select col_int8, col_text from all_types where id = any($1)", .{[2]i32{100, 101}});
-			defer result.deinit();
+	for (0..3)  |_| {
+		var result = try pool.query("select col_int8, col_text from all_types where id = any($1)", .{[2]i32{100, 101}});
+		defer result.deinit();
 
-			const row1 = (try result.next()) orelse unreachable;
-			try t.expectEqual(1, row1.get(i64, 0));
-			try t.expectString("val-1", row1.get([]u8, 1));
+		const row1 = (try result.next()) orelse unreachable;
+		try t.expectEqual(1, row1.get(i64, 0));
+		try t.expectString("val-1", row1.get([]u8, 1));
 
-			const row2 = (try result.next()) orelse unreachable;
-			try t.expectEqual(2, row2.get(i64, 0));
-			try t.expectString("val-2", row2.get([]u8, 1));
+		const row2 = (try result.next()) orelse unreachable;
+		try t.expectEqual(2, row2.get(i64, 0));
+		try t.expectString("val-2", row2.get([]u8, 1));
 
-			try t.expectEqual(null, result.next());
-		}
+		try t.expectEqual(null, result.next());
+	}
 
-		for (0..3)  |_| {
-			var row = try pool.row("select col_int8, col_text from all_types where id = $1", .{101}) orelse unreachable;
-			defer row.deinit();
+	for (0..3)  |_| {
+		var row = try pool.row("select col_int8, col_text from all_types where id = $1", .{101}) orelse unreachable;
+		defer row.deinit();
 
-			try t.expectEqual(2, row.get(i64, 0));
-			try t.expectString("val-2", row.get([]u8, 1));
-		}
+		try t.expectEqual(2, row.get(i64, 0));
+		try t.expectString("val-2", row.get([]u8, 1));
+	}
+}
+
+test "Pool: TLS" {
+	var bundle = Bundle{};
+	try bundle.addCertsFromFilePath(t.allocator, std.fs.cwd(), "tests/server.crt");
+	defer bundle.deinit(t.allocator);
+
+	var pool = try Pool.init(t.allocator, .{
+		.size = 1,
+		.connect = .{
+			.tls = true,
+			.host = "localhost",
+			.ca_bundle = bundle,
+		},
+		.auth = t.authOpts(.{})
+	});
+	defer pool.deinit();
+
+	{
+		_ = try pool.exec("insert into all_types (id, col_int8, col_text) values ($1, $2, $3)", .{200, 1, "val-1"});
+		_ = try pool.exec("insert into all_types (id, col_int8, col_text) values ($1, $2, $3)", .{201, 2, "val-2"});
+	}
+
+	for (0..3)  |_| {
+		var result = try pool.query("select col_int8, col_text from all_types where id = any($1)", .{[2]i32{200, 201}});
+		defer result.deinit();
+
+		const row1 = (try result.next()) orelse unreachable;
+		try t.expectEqual(1, row1.get(i64, 0));
+		try t.expectString("val-1", row1.get([]u8, 1));
+
+		const row2 = (try result.next()) orelse unreachable;
+		try t.expectEqual(2, row2.get(i64, 0));
+		try t.expectString("val-2", row2.get([]u8, 1));
+
+		try t.expectEqual(null, result.next());
+	}
+
+	for (0..3)  |_| {
+		var row = try pool.row("select col_int8, col_text from all_types where id = $1", .{201}) orelse unreachable;
+		defer row.deinit();
+
+		try t.expectEqual(2, row.get(i64, 0));
+		try t.expectString("val-2", row.get([]u8, 1));
+	}
 }
 
 fn testPool(p: *Pool) void {

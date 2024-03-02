@@ -22,6 +22,4 @@ d:
 
 .PHONY: .certs
 certs:
-	bash -c "openssl req -x509 -out tests/server.crt -keyout tests/server.key \
-		-newkey rsa:2048 -nodes -sha256 \
-		-subj '/CN=localhost' -extensions EXT -config <(printf \"[dn]\nCN=localhost\n[req]\ndistinguished_name = dn\n[EXT]\nsubjectAltName=DNS:localhost\nkeyUsage=digitalSignature\nextendedKeyUsage=serverAuth\")"
+	openssl req  -nodes -new -x509 -keyout tests/server.key -out tests/server.crt -subj '/CN=localhost'

@@ -62,8 +62,6 @@ pub const Pool = struct {
 			._timeout = @as(u64, @intCast(opts.timeout)) * std.time.ns_per_ms,
 		};
 
-		errdefer pool._reconnector.stop();
-
 		var opened_connections: usize = 0;
 		errdefer {
 			for (0..opened_connections) |i| {
